@@ -147,12 +147,15 @@ app.get('/download', async (req, res) => {
         }, 1500); 
 
     } catch (error) {
-    console.error("FULL ERROR LOG:", error); // This is the most important line for Railway logs
-    if (!res.headersSent) res.status(500).json({ 
-        error: 'Extraction failed.', 
-        details: error.message 
-    });
-}
+        console.error("FULL ERROR LOG:", error); 
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                error: 'Extraction failed.', 
+                details: error.message 
+            });
+        }
+    }
+}); // This closes app.get('/download')
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
