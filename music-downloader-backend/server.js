@@ -24,7 +24,7 @@ app.use(express.json());
 app.use(cors({
   origin: '*', // For now, allow everything to test if it works
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type'] 
 }));
 
 io.on('connection', (socket) => {
