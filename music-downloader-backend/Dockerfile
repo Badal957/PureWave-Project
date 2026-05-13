@@ -10,8 +10,8 @@ WORKDIR /app
 # 4. Copy your package.json first
 COPY package*.json ./
 
-# 5. Install the Node packages (This will now succeed because Python is installed)
-RUN npm install
+# 5. Install the Node packages
+RUN npm install --legacy-peer-deps
 
 # 6. Copy the rest of your backend code
 COPY . .
