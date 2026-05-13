@@ -1,0 +1,6 @@
+# Force the server to install BOTH Node.js and Python
+   providers = ["node", "python"]
+
+   # Force the server to install the ffmpeg media engine
+   [phases.setup]
+   nixPkgs = ["...", "ffmpeg"]
