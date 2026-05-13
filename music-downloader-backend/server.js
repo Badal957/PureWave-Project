@@ -3,7 +3,8 @@ const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');
 const ytdlp = require('yt-dlp-exec');
 const { exec } = require('yt-dlp-exec');
-const ffmpegPath = require('ffmpeg-static');
+const ffmpegPath = process.env.NODE_ENV === 'production' ? 'ffmpeg' : require('ffmpeg-static');
+ffmpeg.setFfmpegPath(ffmpegPath);
 const NodeID3 = require('node-id3');
 const axios = require('axios');
 const fs = require('fs');
@@ -22,9 +23,10 @@ const cookiePath = path.join(__dirname, 'cookies.txt');
 app.use(cors({ exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
 app.use(cors({
-  origin: '*', // For now, allow everything to test if it works
+  origin: '*', 
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'] 
+  allowedHeaders: ['Content-Type'],
+  exposedHeaders: ['Content-Disposition'] // Merge this line here
 }));
 
 io.on('connection', (socket) => {
@@ -35,6 +37,8 @@ app.get('/info', async (req, res) => {
     try {
         const info = await ytdlp(req.query.url, { 
             dumpSingleJson: true, noWarnings: true, cookies: cookiePath,
+            noCheckCertificates: true,
+            preferFreeFormats: true,
             addHeader: ['User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36']
         });
         res.json({ title: info.title, videoId: info.id, thumbnail: info.thumbnail, uploader: info.uploader });
@@ -47,6 +51,8 @@ app.get('/playlist', async (req, res) => {
     try {
         const info = await ytdlp(req.query.url, { 
             dumpSingleJson: true, flatPlaylist: true, cookies: cookiePath,
+             noCheckCertificates: true,
+             preferFreeFormats: true,
             addHeader: ['User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36']
         });
         const tracks = info.entries.map(entry => entry.url || `https://www.youtube.com/watch?v=${entry.id}`);
@@ -141,9 +147,12 @@ app.get('/download', async (req, res) => {
         }, 1500); 
 
     } catch (error) {
-        if (!res.headersSent) res.status(500).send('Extraction failed.');
-    }
-});
+    console.error("FULL ERROR LOG:", error); // This is the most important line for Railway logs
+    if (!res.headersSent) res.status(500).json({ 
+        error: 'Extraction failed.', 
+        details: error.message 
+    });
+}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
