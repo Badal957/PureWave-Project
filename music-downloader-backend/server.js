@@ -21,6 +21,11 @@ const cookiePath = path.join(__dirname, 'cookies.txt');
 
 app.use(cors({ exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
+app.use(cors({
+  origin: '*', // For now, allow everything to test if it works
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
 
 io.on('connection', (socket) => {
     console.log(`Frontend Connected: ${socket.id}`);
