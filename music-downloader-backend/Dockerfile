@@ -17,4 +17,4 @@ RUN npm install --legacy-peer-deps
 COPY . .
 
 # 7. Start the server
-CMD ["node", "index.js"]
+CMD ["node", "server.js"]
