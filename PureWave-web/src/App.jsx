@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import WaveSurfer from 'wavesurfer.js'; 
 import './App.css';
 
-const BASE_URL = 'natural-fascination-purewave-1.up.railway.app';
+cconst BASE_URL = 'https://natural-fascination-purewave-1.up.railway.app';
 const socket = io(BASE_URL);
 
 // Helper function to format time
