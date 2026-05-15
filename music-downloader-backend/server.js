@@ -36,21 +36,18 @@ io.on('connection', (socket) => {
 // Helper for Base yt-dlp Options (Anti-Bot configuration)
 const getBaseOptions = () => ({
     noWarnings: true,
-    cookies: cookiePath,
+    cookies: '/app/cookies.txt', // Using your VIP pass!
     noCheckCertificates: true,
     preferFreeFormats: true,
-    addHeader: 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    extractorArgs: 'youtube:player_client=android' // Highly effective at bypassing 403 Bot Blocks
+    addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36']
 });
 
 app.get('/info', async (req, res) => {
     try {
-        // We make a copy of base options and explicitly REMOVE format restrictions
-        // so it doesn't crash just trying to fetch the title!
         const infoOptions = { 
             dumpSingleJson: true, 
             ...getBaseOptions(),
-            format: 'best' // Force it to accept whatever is available for info
+            format: 'ba/bv/best/all' // Bulletproof format selector
         };
 
         const info = await ytdlp(req.query.url, infoOptions);
