@@ -1,20 +1,22 @@
-# 1. Use a standard Linux machine with Node.js pre-installed
-FROM node:18-bullseye
+# We changed "bullseye" to "bookworm" - this upgrades Python from 3.9 to 3.11!
+FROM node:18-bookworm
 
-# 2. Force the installation of Python and FFmpeg (No skipping allowed!)
+# Install system dependencies
 RUN apt-get update && apt-get install -y python3 python-is-python3 ffmpeg
 
-# 3. Create a directory for your app
 WORKDIR /app
 
-# 4. Copy your package.json first
+# Copy package files
 COPY package*.json ./
 
-# 5. Install the Node packages
+# Install dependencies safely
 RUN npm install --legacy-peer-deps
 
-# 6. Copy the rest of your backend code
+# Copy the rest of the code
 COPY . .
 
-# 7. Start the server
+# Set environment to production
+ENV NODE_ENV=production
+
+# Final start command
 CMD ["node", "server.js"]
