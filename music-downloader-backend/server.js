@@ -45,11 +45,24 @@ const getBaseOptions = () => ({
 
 app.get('/info', async (req, res) => {
     try {
-        const info = await ytdlp(req.query.url, { dumpSingleJson: true, ...getBaseOptions() });
-        res.json({ title: info.title, videoId: info.id, thumbnail: info.thumbnail, uploader: info.uploader });
+        // We make a copy of base options and explicitly REMOVE format restrictions
+        // so it doesn't crash just trying to fetch the title!
+        const infoOptions = { 
+            dumpSingleJson: true, 
+            ...getBaseOptions(),
+            format: 'best' // Force it to accept whatever is available for info
+        };
+
+        const info = await ytdlp(req.query.url, infoOptions);
+        
+        res.json({ 
+            title: info.title, 
+            videoId: info.id, 
+            thumbnail: info.thumbnail, 
+            uploader: info.uploader 
+        });
     } catch (error) {
         console.error("Info Fetch Error:", error.message);
-        // We are adding 'exact_cause' to send the raw error to your browser
         res.status(500).json({ 
             error: "Could not fetch info.", 
             exact_cause: error.message || error.toString() 
