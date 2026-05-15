@@ -49,7 +49,11 @@ app.get('/info', async (req, res) => {
         res.json({ title: info.title, videoId: info.id, thumbnail: info.thumbnail, uploader: info.uploader });
     } catch (error) {
         console.error("Info Fetch Error:", error.message);
-        res.status(500).json({ error: "Could not fetch info." });
+        // We are adding 'exact_cause' to send the raw error to your browser
+        res.status(500).json({ 
+            error: "Could not fetch info.", 
+            exact_cause: error.message || error.toString() 
+        });
     }
 });
 
