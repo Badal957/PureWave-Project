@@ -4,17 +4,17 @@ const axios = require('axios');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const NodeID3 = require('node-id3'); // Added back for your Image/Tags!
+const NodeID3 = require('node-id3'); 
 
 const app = express();
 const server = http.createServer(app);
 
 app.use(express.json());
-// Exposed Content-Disposition so the browser knows the real file name
+// Exposes the header so the browser knows the real file name
 app.use(cors({ origin: '*', methods: ['GET', 'POST'], exposedHeaders: ['Content-Disposition'] }));
 
 // ==========================================
-// 🔴 THE BULLETPROOF API CONFIGURATION 🔴
+// 🔴 THE BULLETPROOF AUDIO API CONFIGURATION 🔴
 // ==========================================
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '0ac6974856msh59294fa085acc50p170fc6jsne422806d7be2';
 const RAPIDAPI_HOST = 'youtube-mp36.p.rapidapi.com'; 
@@ -42,27 +42,21 @@ app.get('/info', (req, res) => {
     }
 });
 
-// --- BULLETPROOF 1-STEP DOWNLOAD ROUTE (WITH VIDEO/IMAGE LOGIC) ---
+// --- BULLETPROOF AUDIO DOWNLOAD ROUTE ---
 app.get('/download', async (req, res) => {
-    // We now accept 'mode' (audio/video) from your frontend
-    const { url, mode = 'audio' } = req.query; 
+    const { url } = req.query; 
 
     try {
         const videoId = extractVideoId(url);
         if (!videoId) return res.status(400).json({ error: 'Invalid YouTube link.' });
 
-        console.log(`Sending Video ID: ${videoId} to stable API for ${mode}...`);
+        console.log(`Sending Video ID: ${videoId} to stable API for MP3 Extraction...`);
 
-        // 1. Request the file from RapidAPI
-        // We pass format and quality in the params. If the API supports it, it will honor it!
+        // 1. Request the link from RapidAPI (STRICTLY ID ONLY - No MP4 parameters!)
         const options = {
             method: 'GET',
             url: `https://${RAPIDAPI_HOST}/dl`,
-            params: { 
-                id: videoId,
-                format: mode === 'video' ? 'mp4' : 'mp3', // Asking API for video if requested
-                quality: '320' // Forcing request for 320kbps
-            }, 
+            params: { id: videoId }, 
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
                 'X-RapidAPI-Host': RAPIDAPI_HOST
@@ -76,16 +70,17 @@ app.get('/download', async (req, res) => {
         }
 
         const downloadUrl = apiResponse.data.link;
-        const rawTitle = apiResponse.data.title || "PureWave_Media";
-        const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9 ()\-]/g, "").trim() || "Download";
-        const ext = mode === 'video' ? 'mp4' : 'mp3';
+        // Grab title from API, fallback to default
+        const rawTitle = apiResponse.data.title || "PureWave_Audio";
+        // Clean special characters out of the title to prevent file corruption
+        const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9 ()\-]/g, "").trim() || "Audio_Download";
         
         const tempId = Date.now();
-        const tempFilePath = path.join(__dirname, `temp_${tempId}.${ext}`);
+        const tempFilePath = path.join(__dirname, `temp_${tempId}.mp3`);
 
-        console.log("Link generated! Intercepting file to add tags and clean name...");
+        console.log("Link generated! Intercepting MP3 to add tags and clean name...");
 
-        // 2. Download the file from the API into your Railway Server temporarily
+        // 2. Download the MP3 into your Railway Server temporarily
         const fileResponse = await axios({
             method: 'GET',
             url: downloadUrl,
@@ -100,29 +95,27 @@ app.get('/download', async (req, res) => {
             writer.on('error', reject);
         });
 
-        // 3. Add Thumbnail Image and ID3 Tags (Only works for Audio)
-        if (mode === 'audio') {
-            let imageBuffer = null;
-            try {
-                const thumbUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
-                const imgRes = await axios.get(thumbUrl, { responseType: 'arraybuffer' });
-                imageBuffer = Buffer.from(imgRes.data);
-                console.log("Thumbnail injected!");
-            } catch (e) {
-                console.log("Failed to download thumbnail, continuing without it.");
-            }
-
-            NodeID3.write({
-                title: cleanTitle, 
-                artist: "PureWave Audio", 
-                image: imageBuffer ? { mime: "image/jpeg", type: { id: 3 }, imageBuffer: imageBuffer } : undefined
-            }, tempFilePath);
+        // 3. Add Thumbnail Image and ID3 Tags
+        let imageBuffer = null;
+        try {
+            const thumbUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            const imgRes = await axios.get(thumbUrl, { responseType: 'arraybuffer' });
+            imageBuffer = Buffer.from(imgRes.data);
+            console.log("Thumbnail injected!");
+        } catch (e) {
+            console.log("Failed to download thumbnail, continuing without it.");
         }
 
-        // 4. Send the perfectly named, tagged file to the user's browser
-        res.download(tempFilePath, `${cleanTitle}.${ext}`, (err) => {
+        NodeID3.write({
+            title: cleanTitle, 
+            artist: "PureWave Audio", 
+            image: imageBuffer ? { mime: "image/jpeg", type: { id: 3 }, imageBuffer: imageBuffer } : undefined
+        }, tempFilePath);
+
+        // 4. Send the perfectly named, tagged MP3 to the user's browser
+        res.download(tempFilePath, `${cleanTitle}.mp3`, (err) => {
             if (err) console.error("Error sending file to client:", err);
-            // Delete the temp file to save server space
+            // Delete the temp file so your Railway server doesn't run out of storage
             if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); 
         });
 
@@ -137,5 +130,5 @@ app.get('/download', async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`PureWave Stable Gateway running on port ${PORT}`);
+  console.log(`PureWave Stable Audio Gateway running on port ${PORT}`);
 });
