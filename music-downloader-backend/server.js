@@ -36,10 +36,9 @@ io.on('connection', (socket) => {
 // Helper for Base yt-dlp Options (Anti-Bot configuration)
 const getBaseOptions = () => ({
     noWarnings: true,
-    cookies: '/app/cookies.txt', // Using your VIP pass!
+    cookies: '/app/cookies.txt', 
     noCheckCertificates: true,
-    preferFreeFormats: true,
-    addHeader: ['User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36']
+    preferFreeFormats: true
 });
 
 app.get('/info', async (req, res) => {
