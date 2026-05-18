@@ -44,7 +44,7 @@ app.get('/info', (req, res) => {
     }
 });
 
-// --- NEW RAPIDAPI DOWNLOADER ROUTE ---
+// --- RAPIDAPI DOWNLOADER ROUTE (PATH-BASED ROUTING FIX) ---
 app.get('/download', async (req, res) => {
     const { url, mode = 'audio' } = req.query; 
 
@@ -54,20 +54,17 @@ app.get('/download', async (req, res) => {
             return res.status(400).json({ error: 'Invalid YouTube link.' });
         }
 
-        console.log(`Routing Video ID: ${videoId} to ${RAPIDAPI_HOST}...`);
-
-        // Determine if user wants an mp3 or mp4 file
+        // Determine if user wants mp3 or mp4 path slice
         const isVideo = mode === 'video';
-        const targetFormat = isVideo ? 'mp4' : 'mp3';
+        const endpointType = isVideo ? 'mp4' : 'mp3';
 
-        // Setting up the request to your exact API's download router
+        console.log(`Routing Video ID: ${videoId} to ${RAPIDAPI_HOST} via /${endpointType} route...`);
+
+        // Setting up the request using Path Parameters instead of Query Parameters
         const options = {
             method: 'GET',
-            // Using the base domain you provided + standard conversion paths
-            url: `https://${RAPIDAPI_HOST}/download`, 
+            url: `https://${RAPIDAPI_HOST}/${endpointType}/${videoId}`, 
             params: { 
-                id: videoId,
-                format: targetFormat,
                 response_mode: 'default'
             }, 
             headers: {
@@ -78,27 +75,30 @@ app.get('/download', async (req, res) => {
 
         const apiResponse = await axios.request(options);
 
-        // Debug log to check exactly what your API returns in the Railway console
+        // Debug log to check the JSON format your API returns
         console.log("API Response Data:", apiResponse.data);
 
-        // Extracting download link (handles 'link', 'url', or 'download_url' depending on API design)
+        // Extracting download link dynamically
         const downloadLink = apiResponse.data.link || apiResponse.data.url || apiResponse.data.download_url;
 
         if (downloadLink) {
             console.log("Link fetched successfully! Redirecting browser download stream...");
             res.redirect(downloadLink);
         } else {
-            throw new Error("API authenticated successfully but did not return a media file URL.");
+            throw new Error("API responded but no media link key was found in the payload.");
         }
 
     } catch (error) {
         console.error("\n--- API EXTRACTION FAILED ---");
         console.error("Error Details:", error.message || error);
+        if (error.response) {
+            console.error("API Error Body:", error.response.data);
+        }
         console.error("-------------------------\n");
         
         res.status(500).json({ error: 'API Extraction failed.', details: error.message });
     }
-}); 
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
