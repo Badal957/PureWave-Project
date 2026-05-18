@@ -23,18 +23,31 @@ const extractVideoId = (url) => {
 };
 
 // --- INFO ROUTE ---
-app.get('/info', (req, res) => {
+// --- REAL INFO ROUTE (FIXED TITLE & UPLOADER) ---
+app.get('/info', async (req, res) => {
     try {
         const videoId = extractVideoId(req.query.url);
         if (!videoId) throw new Error("Invalid URL");
+
+        // Use YouTube's free, public oEmbed API to grab the exact metadata safely
+        const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+        const response = await axios.get(oembedUrl);
+
         res.json({ 
-            title: "PureWave Stream Ready",
+            title: response.data.title,                 // 👈 The actual video title!
             videoId: videoId, 
             thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`, 
-            uploader: "RapidAPI Engine" 
+            uploader: response.data.author_name         // 👈 The actual channel name!
         });
     } catch (error) {
-        res.status(500).json({ error: "Could not parse YouTube URL." });
+        console.error("Info Fetch Error:", error.message);
+        // Fallback just in case the video is private or deleted
+        res.json({
+            title: "Audio_Download",
+            videoId: extractVideoId(req.query.url),
+            thumbnail: `https://i.ytimg.com/vi/${extractVideoId(req.query.url)}/maxresdefault.jpg`,
+            uploader: "YouTube"
+        });
     }
 });
 
