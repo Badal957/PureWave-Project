@@ -16,6 +16,7 @@ app.use(cors({
 // ==========================================
 // 🔴 YOUR EXACT RAPIDAPI CONFIGURATION 🔴
 // ==========================================
+// This checks your Railway Environment variables first, then falls back to your string
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '0ac6974856msh59294fa085acc50p170fc6jsne422806d7be2';
 const RAPIDAPI_HOST = 'youtube-mp3-audio-video-downloader.p.rapidapi.com'; 
 // ==========================================
