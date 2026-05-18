@@ -33,12 +33,14 @@ io.on('connection', (socket) => {
     console.log(`Frontend Connected: ${socket.id}`);
 });
 
-// Helper for Base yt-dlp Options (Anti-Bot configuration)
+// Helper for Base yt-dlp Options (Anti-Bot & Anti-Soft-Block configuration)
 const getBaseOptions = () => ({
     noWarnings: true,
     cookies: '/app/cookies.txt', 
     noCheckCertificates: true,
-    preferFreeFormats: true
+    preferFreeFormats: true,
+    forceIpv4: true, // Bypass datacenter IPv6 bans
+    extractorArgs: 'youtube:player_client=ios,web' // Spoof iOS to force YouTube to reveal formats
 });
 
 app.get('/info', async (req, res) => {
