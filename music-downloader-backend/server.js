@@ -102,10 +102,20 @@ app.get('/download', async (req, res) => {
         let imageBuffer = null;
         if (!isVideo && info.thumbnail) {
             try {
-                const imgRes = await axios.get(info.thumbnail, { responseType: 'arraybuffer' });
+                // Force YouTube to give us a standard JPEG instead of a WEBP format
+                const thumbUrl = info.thumbnail.replace('.webp', '.jpg');
+                
+                // Add a Chrome browser disguise to bypass the image block
+                const imgRes = await axios.get(thumbUrl, { 
+                    responseType: 'arraybuffer',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    }
+                });
                 imageBuffer = Buffer.from(imgRes.data);
+                console.log("Thumbnail downloaded successfully!");
             } catch (e) {
-                console.log("Failed to download thumbnail, continuing without it.");
+                console.log("Failed to download thumbnail:", e.message);
             }
         }
 
