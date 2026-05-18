@@ -18,7 +18,7 @@ app.use(cors({
 // ==========================================
 // This checks your Railway Environment variables first, then falls back to your string
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '0ac6974856msh59294fa085acc50p170fc6jsne422806d7be2';
-const RAPIDAPI_HOST = 'youtube-mp3-audio-video-downloader.p.rapidapi.com'; 
+const RAPIDAPI_HOST = 'youtube-to-mp315.p.rapidapi.com'; // 👈 UPDATED TO YOUR NEW HOST
 // ==========================================
 
 // Helper: Extract the 11-character video ID from any YouTube link
@@ -55,14 +55,12 @@ app.get('/download', async (req, res) => {
             return res.status(400).json({ error: 'Invalid YouTube link.' });
         }
 
-        const isVideo = mode === 'video';
-        const formatType = isVideo ? 'mp4' : 'mp3';
-
-        // Array of possible endpoint paths this specific developer might use
+        // Array of possible endpoint paths. 
+        // We put your exact '/status/{id}' endpoint at the very top!
         const possibleUrls = [
-            `https://${RAPIDAPI_HOST}/download/${formatType}/${videoId}`, // Try Path 1: /download/mp3/ID
-            `https://${RAPIDAPI_HOST}/${formatType}/${videoId}`,          // Try Path 2: /mp3/ID
-            `https://${RAPIDAPI_HOST}/download/${videoId}`                // Try Path 3: /download/ID
+            `https://${RAPIDAPI_HOST}/status/${videoId}`, // 👈 The exact path you found
+            `https://${RAPIDAPI_HOST}/dl`,                // Fallback query approach
+            `https://${RAPIDAPI_HOST}/download`           // Fallback query approach
         ];
 
         let apiResponse = null;
@@ -72,8 +70,12 @@ app.get('/download', async (req, res) => {
         for (const apiUrl of possibleUrls) {
             try {
                 console.log(`Testing endpoint path: ${apiUrl}`);
+                
+                // If using the fallback paths, we need to pass the ID as a query parameter
+                const requestParams = apiUrl.includes('/status/') ? {} : { id: videoId };
+
                 const response = await axios.get(apiUrl, {
-                    params: { response_mode: 'default' },
+                    params: requestParams,
                     headers: {
                         'X-RapidAPI-Key': RAPIDAPI_KEY,
                         'X-RapidAPI-Host': RAPIDAPI_HOST
@@ -90,7 +92,7 @@ app.get('/download', async (req, res) => {
                     console.log(`Path 404'd. Swapping to next configuration...`);
                     continue;
                 }
-                // If it's a different error (like 401 or 403), break early because it's an auth issue
+                // Break on auth errors (401/403) so we don't spam the API
                 break;
             }
         }
@@ -102,8 +104,8 @@ app.get('/download', async (req, res) => {
         // Debug log the winning payload format
         console.log("Successful API Response Data:", apiResponse.data);
 
-        // Extract and route the file link
-        const downloadLink = apiResponse.data.link || apiResponse.data.url || apiResponse.data.download_url;
+        // Extract and route the file link (Checking standard JSON keys)
+        const downloadLink = apiResponse.data.link || apiResponse.data.url || apiResponse.data.download_url || apiResponse.data.file;
 
         if (downloadLink) {
             console.log("Link verified. Redirecting download stream directly to browser client!");
