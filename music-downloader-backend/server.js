@@ -45,7 +45,7 @@ app.get('/info', (req, res) => {
     }
 });
 
-// --- RAPIDAPI DOWNLOADER ROUTE (PATH-BASED ROUTING FIX) ---
+// --- RAPIDAPI DOWNLOADER ROUTE (SMART PATH RECOVERY) ---
 app.get('/download', async (req, res) => {
     const { url, mode = 'audio' } = req.query; 
 
@@ -55,46 +55,66 @@ app.get('/download', async (req, res) => {
             return res.status(400).json({ error: 'Invalid YouTube link.' });
         }
 
-        // Determine if user wants mp3 or mp4 path slice
         const isVideo = mode === 'video';
-        const endpointType = isVideo ? 'mp4' : 'mp3';
+        const formatType = isVideo ? 'mp4' : 'mp3';
 
-        console.log(`Routing Video ID: ${videoId} to ${RAPIDAPI_HOST} via /${endpointType} route...`);
+        // Array of possible endpoint paths this specific developer might use
+        const possibleUrls = [
+            `https://${RAPIDAPI_HOST}/download/${formatType}/${videoId}`, // Try Path 1: /download/mp3/ID
+            `https://${RAPIDAPI_HOST}/${formatType}/${videoId}`,          // Try Path 2: /mp3/ID
+            `https://${RAPIDAPI_HOST}/download/${videoId}`                // Try Path 3: /download/ID
+        ];
 
-        // Setting up the request using Path Parameters instead of Query Parameters
-        const options = {
-            method: 'GET',
-            url: `https://${RAPIDAPI_HOST}/${endpointType}/${videoId}`, 
-            params: { 
-                response_mode: 'default'
-            }, 
-            headers: {
-                'X-RapidAPI-Key': RAPIDAPI_KEY,
-                'X-RapidAPI-Host': RAPIDAPI_HOST
+        let apiResponse = null;
+        let lastError = null;
+
+        // Loop through the paths until one works
+        for (const apiUrl of possibleUrls) {
+            try {
+                console.log(`Testing endpoint path: ${apiUrl}`);
+                const response = await axios.get(apiUrl, {
+                    params: { response_mode: 'default' },
+                    headers: {
+                        'X-RapidAPI-Key': RAPIDAPI_KEY,
+                        'X-RapidAPI-Host': RAPIDAPI_HOST
+                    }
+                });
+                
+                // If we get here without throwing an error, we found the right path!
+                apiResponse = response;
+                break; 
+            } catch (err) {
+                lastError = err;
+                // If it's a 404, continue the loop to try the next path structure
+                if (err.response && err.response.status === 404) {
+                    console.log(`Path 404'd. Swapping to next configuration...`);
+                    continue;
+                }
+                // If it's a different error (like 401 or 403), break early because it's an auth issue
+                break;
             }
-        };
+        }
 
-        const apiResponse = await axios.request(options);
+        if (!apiResponse) {
+            throw new Error(`All endpoint structural attempts failed. Last status: ${lastError.response ? lastError.response.status : lastError.message}`);
+        }
 
-        // Debug log to check the JSON format your API returns
-        console.log("API Response Data:", apiResponse.data);
+        // Debug log the winning payload format
+        console.log("Successful API Response Data:", apiResponse.data);
 
-        // Extracting download link dynamically
+        // Extract and route the file link
         const downloadLink = apiResponse.data.link || apiResponse.data.url || apiResponse.data.download_url;
 
         if (downloadLink) {
-            console.log("Link fetched successfully! Redirecting browser download stream...");
-            res.redirect(downloadLink);
+            console.log("Link verified. Redirecting download stream directly to browser client!");
+            return res.redirect(downloadLink);
         } else {
-            throw new Error("API responded but no media link key was found in the payload.");
+            throw new Error("API path matched, but response payload was missing a direct download URL string.");
         }
 
     } catch (error) {
         console.error("\n--- API EXTRACTION FAILED ---");
         console.error("Error Details:", error.message || error);
-        if (error.response) {
-            console.error("API Error Body:", error.response.data);
-        }
         console.error("-------------------------\n");
         
         res.status(500).json({ error: 'API Extraction failed.', details: error.message });
