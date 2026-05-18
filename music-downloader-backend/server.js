@@ -10,10 +10,10 @@ app.use(express.json());
 app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 
 // ==========================================
-// 🔴 THE BULLETPROOF API CONFIGURATION 🔴
+// 🔴 YOUR EXACT RAPIDAPI CONFIGURATION 🔴
 // ==========================================
-const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY; 
-const RAPIDAPI_HOST = 'youtube-mp36.p.rapidapi.com'; 
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '0ac6974856msh59294fa085acc50p170fc6jsne422806d7be2';
+const RAPIDAPI_HOST = 'youtube-to-mp315.p.rapidapi.com'; 
 // ==========================================
 
 const extractVideoId = (url) => {
@@ -38,50 +38,81 @@ app.get('/info', (req, res) => {
     }
 });
 
-// --- BULLETPROOF DOWNLOAD ROUTE ---
+// --- 2-STEP DOWNLOAD ROUTE ---
 app.get('/download', async (req, res) => {
-    const { url } = req.query; 
+    const { url, mode = 'audio' } = req.query; 
 
     try {
-        const videoId = extractVideoId(url);
-        if (!videoId) return res.status(400).json({ error: 'Invalid YouTube link.' });
+        if (!url) return res.status(400).json({ error: 'Missing YouTube link.' });
 
-        console.log(`Sending Video ID: ${videoId} to stable API...`);
+        const isVideo = mode === 'video';
+        const formatType = isVideo ? 'mp4' : 'mp3';
 
-        // This specific API uses a flawless 1-step GET request
-        const options = {
-            method: 'GET',
-            url: `https://${RAPIDAPI_HOST}/dl`,
-            params: { id: videoId }, // It just wants the ID!
+        console.log(`Step 1: Sending start request to ${RAPIDAPI_HOST}...`);
+
+        // STEP 1: Start the task
+        const startResponse = await axios.post(`https://${RAPIDAPI_HOST}/download`, {
+            url: url,
+            format: formatType,
+            quality: 0
+        }, {
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
-                'X-RapidAPI-Host': RAPIDAPI_HOST
+                'X-RapidAPI-Host': RAPIDAPI_HOST,
+                'Content-Type': 'application/json'
             }
-        };
+        });
 
-        const apiResponse = await axios.request(options);
+        const taskId = startResponse.data.id;
+        if (!taskId) throw new Error("API did not return a Task ID.");
+
+        console.log(`Task created! ID: ${taskId}. Step 2: Polling...`);
+
+        // STEP 2: Poll the /status/{id} endpoint you found
+        let downloadLink = null;
+        let attempts = 0;
         
-        console.log("API Response Success!");
+        while (attempts < 15) {
+            await new Promise(resolve => setTimeout(resolve, 3000)); 
+            attempts++;
 
-        // This API always returns the link under the exact 'link' key
-        if (apiResponse.data && apiResponse.data.link) {
-            console.log("Redirecting to file...");
-            return res.redirect(apiResponse.data.link);
+            console.log(`Checking status... (${attempts}/15)`);
+            
+            const statusResponse = await axios.get(`https://${RAPIDAPI_HOST}/status/${taskId}`, {
+                headers: {
+                    'X-RapidAPI-Key': RAPIDAPI_KEY,
+                    'X-RapidAPI-Host': RAPIDAPI_HOST
+                }
+            });
+
+            const currentStatus = statusResponse.data.status;
+
+            if (currentStatus === 'AVAILABLE') {
+                downloadLink = statusResponse.data.downloadUrl || statusResponse.data.link;
+                break;
+            } else if (currentStatus === 'CONVERSION_ERROR') {
+                throw new Error("The API failed to convert the video.");
+            }
+        }
+
+        if (downloadLink) {
+            console.log("Success! Redirecting...");
+            return res.redirect(downloadLink);
         } else {
-            throw new Error("Failed to extract link from standard response.");
+            throw new Error("Conversion timed out.");
         }
 
     } catch (error) {
-        console.error("\n--- API EXTRACTION FAILED ---");
-        console.error("Error Details:", error.message);
-        if (error.response) console.error("Response Data:", error.response.data);
-        console.error("-------------------------\n");
+        console.error("\n--- API FAILED ---");
+        console.error("Error:", error.message);
+        if (error.response) console.error("Data:", error.response.data);
+        console.error("------------------\n");
         
-        res.status(500).json({ error: 'API Extraction failed.', details: error.message });
+        res.status(500).json({ error: 'API failed.', details: error.message });
     }
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`PureWave Stable Gateway running on port ${PORT}`);
+  console.log(`PureWave Gateway running on port ${PORT}`);
 });
