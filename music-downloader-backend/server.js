@@ -51,14 +51,11 @@ app.get('/download', async (req, res) => {
 
         console.log(`Sending Video ID: ${videoId} to stable API for 160kbps MP3...`);
 
-        // 1. Request the link from RapidAPI (Asking explicitly for 160kbps)
+        // 1. Request the link from RapidAPI 
         const options = {
             method: 'GET',
             url: `https://${RAPIDAPI_HOST}/dl`,
-            params: { 
-                id: videoId,
-                quality: '160' // 👈 Requesting 160kbps from the API
-            }, 
+            params: { id: videoId }, 
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
                 'X-RapidAPI-Host': RAPIDAPI_HOST
