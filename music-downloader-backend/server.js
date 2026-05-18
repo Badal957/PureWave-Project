@@ -45,78 +45,83 @@ app.get('/info', (req, res) => {
     }
 });
 
-// --- RAPIDAPI DOWNLOADER ROUTE (SMART PATH RECOVERY) ---
+// --- 2-STEP RAPIDAPI DOWNLOADER ROUTE ---
 app.get('/download', async (req, res) => {
     const { url, mode = 'audio' } = req.query; 
 
     try {
-        const videoId = extractVideoId(url);
-        if (!videoId) {
-            return res.status(400).json({ error: 'Invalid YouTube link.' });
+        if (!url) {
+            return res.status(400).json({ error: 'Missing YouTube link.' });
         }
 
-        // Array of possible endpoint paths. 
-        // We put your exact '/status/{id}' endpoint at the very top!
-        const possibleUrls = [
-            `https://${RAPIDAPI_HOST}/status/${videoId}`, // 👈 The exact path you found
-            `https://${RAPIDAPI_HOST}/dl`,                // Fallback query approach
-            `https://${RAPIDAPI_HOST}/download`           // Fallback query approach
-        ];
+        const isVideo = mode === 'video';
+        const formatType = isVideo ? 'mp4' : 'mp3';
 
-        let apiResponse = null;
-        let lastError = null;
+        console.log(`Step 1: Sending conversion request to RapidAPI...`);
 
-        // Loop through the paths until one works
-        for (const apiUrl of possibleUrls) {
-            try {
-                console.log(`Testing endpoint path: ${apiUrl}`);
-                
-                // If using the fallback paths, we need to pass the ID as a query parameter
-                const requestParams = apiUrl.includes('/status/') ? {} : { id: videoId };
-
-                const response = await axios.get(apiUrl, {
-                    params: requestParams,
-                    headers: {
-                        'X-RapidAPI-Key': RAPIDAPI_KEY,
-                        'X-RapidAPI-Host': RAPIDAPI_HOST
-                    }
-                });
-                
-                // If we get here without throwing an error, we found the right path!
-                apiResponse = response;
-                break; 
-            } catch (err) {
-                lastError = err;
-                // If it's a 404, continue the loop to try the next path structure
-                if (err.response && err.response.status === 404) {
-                    console.log(`Path 404'd. Swapping to next configuration...`);
-                    continue;
-                }
-                // Break on auth errors (401/403) so we don't spam the API
-                break;
+        // STEP 1: Ask the API to start converting (POST Request)
+        const startResponse = await axios.post(`https://${RAPIDAPI_HOST}/download`, {
+            url: url,          // This API requires the full URL, not just the ID!
+            format: formatType,
+            quality: 0
+        }, {
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': RAPIDAPI_HOST,
+                'Content-Type': 'application/json'
             }
+        });
+
+        // The API gives us a unique UUID for this specific task
+        const taskId = startResponse.data.id;
+        if (!taskId) {
+            throw new Error("Failed to initialize conversion task. API did not return a Task ID.");
         }
 
-        if (!apiResponse) {
-            throw new Error(`All endpoint structural attempts failed. Last status: ${lastError.response ? lastError.response.status : lastError.message}`);
+        console.log(`Task created successfully! Task ID: ${taskId}`);
+        console.log(`Step 2: Polling for completion...`);
+
+        // STEP 2: Check the status every 3 seconds until it is 'AVAILABLE'
+        let downloadLink = null;
+        let attempts = 0;
+        const maxAttempts = 15; // Will wait a maximum of 45 seconds before timing out
+
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Pause for 3 seconds
+            attempts++;
+
+            console.log(`Checking status (Attempt ${attempts}/${maxAttempts})...`);
+            
+            const statusResponse = await axios.get(`https://${RAPIDAPI_HOST}/status/${taskId}`, {
+                headers: {
+                    'X-RapidAPI-Key': RAPIDAPI_KEY,
+                    'X-RapidAPI-Host': RAPIDAPI_HOST
+                }
+            });
+
+            const currentStatus = statusResponse.data.status;
+
+            if (currentStatus === 'AVAILABLE') {
+                // We found the finish line! Extract the link.
+                downloadLink = statusResponse.data.downloadUrl || statusResponse.data.link;
+                break;
+            } else if (currentStatus === 'CONVERSION_ERROR') {
+                throw new Error("The API failed to convert this specific video.");
+            }
+            // If the status is 'CONVERTING', the loop just naturally continues to the next attempt
         }
-
-        // Debug log the winning payload format
-        console.log("Successful API Response Data:", apiResponse.data);
-
-        // Extract and route the file link (Checking standard JSON keys)
-        const downloadLink = apiResponse.data.link || apiResponse.data.url || apiResponse.data.download_url || apiResponse.data.file;
 
         if (downloadLink) {
-            console.log("Link verified. Redirecting download stream directly to browser client!");
+            console.log("File is ready! Redirecting browser...");
             return res.redirect(downloadLink);
         } else {
-            throw new Error("API path matched, but response payload was missing a direct download URL string.");
+            throw new Error("Conversion timed out after 45 seconds.");
         }
 
     } catch (error) {
         console.error("\n--- API EXTRACTION FAILED ---");
         console.error("Error Details:", error.message || error);
+        if (error.response) console.error("API Response:", error.response.data);
         console.error("-------------------------\n");
         
         res.status(500).json({ error: 'API Extraction failed.', details: error.message });
