@@ -1,194 +1,141 @@
 const express = require('express');
 const cors = require('cors');
-const ffmpeg = require('fluent-ffmpeg');
-const ytdlp = require('yt-dlp-exec');
-const { exec } = require('yt-dlp-exec');
-const NodeID3 = require('node-id3');
 const axios = require('axios');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
-const { Server } = require('socket.io');
-
-// FFmpeg setup
-const ffmpegPath = process.env.NODE_ENV === 'production' ? 'ffmpeg' : require('ffmpeg-static');
-ffmpeg.setFfmpegPath(ffmpegPath);
+const NodeID3 = require('node-id3'); // Added back for your Image/Tags!
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 
-// We are now pointing this to a cookies file you will upload!
-const cookiePath = path.join(__dirname, 'cookies.txt');
-
-// Middleware
 app.use(express.json());
-app.use(cors({
-  origin: '*', 
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
-  exposedHeaders: ['Content-Disposition'] 
-}));
+// Exposed Content-Disposition so the browser knows the real file name
+app.use(cors({ origin: '*', methods: ['GET', 'POST'], exposedHeaders: ['Content-Disposition'] }));
 
-io.on('connection', (socket) => {
-    console.log(`Frontend Connected: ${socket.id}`);
-});
+// ==========================================
+// 🔴 THE BULLETPROOF API CONFIGURATION 🔴
+// ==========================================
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '0ac6974856msh59294fa085acc50p170fc6jsne422806d7be2';
+const RAPIDAPI_HOST = 'youtube-mp36.p.rapidapi.com'; 
+// ==========================================
 
-// Helper for Base yt-dlp Options 
-const getBaseOptions = () => ({
-    noWarnings: true,
-    // 🔴 THIS IS THE MAGIC KEY TO BYPASS THE BOT BAN 🔴
-    cookies: cookiePath, 
-    noCheckCertificates: true,
-    preferFreeFormats: true,
-    forceIpv4: true, 
-    extractorArgs: 'youtube:player_client=tv,android' 
-});
+const extractVideoId = (url) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+};
 
-app.get('/info', async (req, res) => {
+// --- INFO ROUTE ---
+app.get('/info', (req, res) => {
     try {
-        const infoOptions = { 
-            dumpSingleJson: true, 
-            ...getBaseOptions(),
-            format: 'ba/bv/best/all' 
+        const videoId = extractVideoId(req.query.url);
+        if (!videoId) throw new Error("Invalid URL");
+        res.json({ 
+            title: "PureWave Stream Ready",
+            videoId: videoId, 
+            thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`, 
+            uploader: "RapidAPI Engine" 
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Could not parse YouTube URL." });
+    }
+});
+
+// --- BULLETPROOF 1-STEP DOWNLOAD ROUTE (WITH VIDEO/IMAGE LOGIC) ---
+app.get('/download', async (req, res) => {
+    // We now accept 'mode' (audio/video) from your frontend
+    const { url, mode = 'audio' } = req.query; 
+
+    try {
+        const videoId = extractVideoId(url);
+        if (!videoId) return res.status(400).json({ error: 'Invalid YouTube link.' });
+
+        console.log(`Sending Video ID: ${videoId} to stable API for ${mode}...`);
+
+        // 1. Request the file from RapidAPI
+        // We pass format and quality in the params. If the API supports it, it will honor it!
+        const options = {
+            method: 'GET',
+            url: `https://${RAPIDAPI_HOST}/dl`,
+            params: { 
+                id: videoId,
+                format: mode === 'video' ? 'mp4' : 'mp3', // Asking API for video if requested
+                quality: '320' // Forcing request for 320kbps
+            }, 
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': RAPIDAPI_HOST
+            }
         };
 
-        const info = await ytdlp(req.query.url, infoOptions);
+        const apiResponse = await axios.request(options);
         
-        res.json({ 
-            title: info.title, 
-            videoId: info.id, 
-            thumbnail: info.thumbnail, 
-            uploader: info.uploader 
-        });
-    } catch (error) {
-        console.error("Info Fetch Error:", error.message);
-        res.status(500).json({ 
-            error: "Could not fetch info.", 
-            exact_cause: error.message || error.toString() 
-        });
-    }
-});
+        if (!apiResponse.data || !apiResponse.data.link) {
+            throw new Error("Failed to extract link from API response.");
+        }
 
-app.get('/playlist', async (req, res) => {
-    try {
-        const info = await ytdlp(req.query.url, { dumpSingleJson: true, flatPlaylist: true, ...getBaseOptions() });
-        const tracks = info.entries.map(entry => entry.url || `https://www.youtube.com/watch?v=${entry.id}`);
-        res.json({ title: info.title, tracks: tracks });
-    } catch (error) {
-        console.error("Playlist Fetch Error:", error.message);
-        res.status(500).json({ error: "Could not fetch playlist." });
-    }
-});
-
-// --- DUAL ENGINE DOWNLOADER (Audio & Video) ---
-app.get('/download', async (req, res) => {
-    const { url, clientId, format = 'mp3', mode = 'audio' } = req.query; 
-
-    try {
-        // 1. Get Video Metadata
-        const info = await ytdlp(url, { dumpSingleJson: true, ...getBaseOptions() });
-        
-        const cleanTitle = info.title.replace(/[^a-zA-Z0-9 ]/g, '');
-        const isVideo = mode === 'video';
-        const fileExtension = isVideo ? 'mp4' : format;
+        const downloadUrl = apiResponse.data.link;
+        const rawTitle = apiResponse.data.title || "PureWave_Media";
+        const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9 ()\-]/g, "").trim() || "Download";
+        const ext = mode === 'video' ? 'mp4' : 'mp3';
         
         const tempId = Date.now();
-        const ytDlpOutputPath = path.join(__dirname, `temp_${tempId}.%(ext)s`);
-        const finalFilePath = path.join(__dirname, `temp_${tempId}.${fileExtension}`);
+        const tempFilePath = path.join(__dirname, `temp_${tempId}.${ext}`);
 
-        // 2. Fetch Thumbnail for Audio ID3 Tags
-        let imageBuffer = null;
-        if (!isVideo && info.thumbnail) {
-            try {
-                const thumbUrl = info.thumbnail.replace('.webp', '.jpg');
-                const imgRes = await axios.get(thumbUrl, { 
-                    responseType: 'arraybuffer',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    }
-                });
-                imageBuffer = Buffer.from(imgRes.data);
-                console.log("Thumbnail downloaded successfully!");
-            } catch (e) {
-                console.log("Failed to download thumbnail:", e.message);
-            }
-        }
+        console.log("Link generated! Intercepting file to add tags and clean name...");
 
-        // 3. Configure Download Engine 
-        let dlOptions = { 
-            ...getBaseOptions(), 
-            output: ytDlpOutputPath, 
-            noPlaylist: true 
-        };
-        
-        if (isVideo) {
-            const videoQuality = format === '2160p' ? 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' :
-                                 format === '1080p' ? 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' :
-                                 format === '720p'  ? 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' :
-                                 'best[height<=480][ext=mp4]/best[ext=mp4]/best';
-            dlOptions.format = videoQuality;
-            dlOptions.mergeOutputFormat = 'mp4';
-        } else {
-            dlOptions.format = 'ba/b';
-            dlOptions.extractAudio = true;
-            dlOptions.audioFormat = format;
-            dlOptions.audioQuality = '0'; // 0 is best quality in yt-dlp (320kbps)
-        }
-
-        // 4. Start Download Process
-        const dlProcess = exec(url, dlOptions);
-
-        dlProcess.stdout.on('data', (data) => {
-            const output = data.toString();
-            const progressMatch = output.match(/\[download\]\s+([\d\.]+)\%/);
-            if (progressMatch && clientId) {
-                io.to(clientId).emit('progress', { percent: parseFloat(progressMatch[1]) });
-            }
+        // 2. Download the file from the API into your Railway Server temporarily
+        const fileResponse = await axios({
+            method: 'GET',
+            url: downloadUrl,
+            responseType: 'stream'
         });
+
+        const writer = fs.createWriteStream(tempFilePath);
+        fileResponse.data.pipe(writer);
 
         await new Promise((resolve, reject) => {
-            dlProcess.on('close', (code) => {
-                if (code === 0) resolve();
-                else reject(new Error(`yt-dlp exited with error code ${code}`));
-            });
-            dlProcess.on('error', reject);
+            writer.on('finish', resolve);
+            writer.on('error', reject);
         });
 
-        // 5. Verify File and Send Response
-        if (!fs.existsSync(finalFilePath)) {
-            throw new Error("Download process completed but file was not found.");
-        }
+        // 3. Add Thumbnail Image and ID3 Tags (Only works for Audio)
+        if (mode === 'audio') {
+            let imageBuffer = null;
+            try {
+                const thumbUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+                const imgRes = await axios.get(thumbUrl, { responseType: 'arraybuffer' });
+                imageBuffer = Buffer.from(imgRes.data);
+                console.log("Thumbnail injected!");
+            } catch (e) {
+                console.log("Failed to download thumbnail, continuing without it.");
+            }
 
-        // Write ID3 tags for audio
-        if (!isVideo && format === 'mp3') {
             NodeID3.write({
                 title: cleanTitle, 
-                artist: info.uploader || "PureWave", 
-                album: "PureWave Downloads",
+                artist: "PureWave Audio", 
                 image: imageBuffer ? { mime: "image/jpeg", type: { id: 3 }, imageBuffer: imageBuffer } : undefined
-            }, finalFilePath);
+            }, tempFilePath);
         }
 
-        // Send file securely and delete afterward
-        res.download(finalFilePath, `${cleanTitle}.${fileExtension}`, (err) => {
+        // 4. Send the perfectly named, tagged file to the user's browser
+        res.download(tempFilePath, `${cleanTitle}.${ext}`, (err) => {
             if (err) console.error("Error sending file to client:", err);
-            if (fs.existsSync(finalFilePath)) fs.unlinkSync(finalFilePath); 
+            // Delete the temp file to save server space
+            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); 
         });
 
     } catch (error) {
-        console.error("\n--- EXTRACTION FAILED ---");
-        console.error("URL:", url);
-        console.error("Error Details:", error.message || error);
+        console.error("\n--- API EXTRACTION FAILED ---");
+        console.error("Error Details:", error.message);
         console.error("-------------------------\n");
         
-        if (!res.headersSent) {
-            res.status(500).json({ error: 'Extraction failed.', details: error.message });
-        }
+        res.status(500).json({ error: 'API Extraction failed.', details: error.message });
     }
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`PureWave Dual-Engine running on port ${PORT}`);
+  console.log(`PureWave Stable Gateway running on port ${PORT}`);
 });
