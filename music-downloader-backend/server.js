@@ -10,7 +10,6 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.json());
-// Exposes the header so the browser knows the real file name
 app.use(cors({ origin: '*', methods: ['GET', 'POST'], exposedHeaders: ['Content-Disposition'] }));
 
 // ==========================================
@@ -50,13 +49,16 @@ app.get('/download', async (req, res) => {
         const videoId = extractVideoId(url);
         if (!videoId) return res.status(400).json({ error: 'Invalid YouTube link.' });
 
-        console.log(`Sending Video ID: ${videoId} to stable API for MP3 Extraction...`);
+        console.log(`Sending Video ID: ${videoId} to stable API for 160kbps MP3...`);
 
-        // 1. Request the link from RapidAPI (STRICTLY ID ONLY - No MP4 parameters!)
+        // 1. Request the link from RapidAPI (Asking explicitly for 160kbps)
         const options = {
             method: 'GET',
             url: `https://${RAPIDAPI_HOST}/dl`,
-            params: { id: videoId }, 
+            params: { 
+                id: videoId,
+                quality: '160' // 👈 Requesting 160kbps from the API
+            }, 
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
                 'X-RapidAPI-Host': RAPIDAPI_HOST
@@ -70,9 +72,7 @@ app.get('/download', async (req, res) => {
         }
 
         const downloadUrl = apiResponse.data.link;
-        // Grab title from API, fallback to default
         const rawTitle = apiResponse.data.title || "PureWave_Audio";
-        // Clean special characters out of the title to prevent file corruption
         const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9 ()\-]/g, "").trim() || "Audio_Download";
         
         const tempId = Date.now();
@@ -115,7 +115,6 @@ app.get('/download', async (req, res) => {
         // 4. Send the perfectly named, tagged MP3 to the user's browser
         res.download(tempFilePath, `${cleanTitle}.mp3`, (err) => {
             if (err) console.error("Error sending file to client:", err);
-            // Delete the temp file so your Railway server doesn't run out of storage
             if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); 
         });
 
