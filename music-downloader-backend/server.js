@@ -89,7 +89,11 @@ app.get('/download', async (req, res) => {
         const cleanTitle = info.title.replace(/[^a-zA-Z0-9 ]/g, '');
         const isVideo = mode === 'video';
         const fileExtension = isVideo ? 'mp4' : format;
-        const tempFilePath = path.join(__dirname, `temp_${Date.now()}.${fileExtension}`);
+        
+        // THE FIX: Use %(ext)s so yt-dlp manages the conversion extensions correctly
+        const tempId = Date.now();
+        const ytDlpOutputPath = path.join(__dirname, `temp_${tempId}.%(ext)s`);
+        const finalFilePath = path.join(__dirname, `temp_${tempId}.${fileExtension}`);
 
         // 2. Fetch Thumbnail for Audio ID3 Tags
         let imageBuffer = null;
@@ -102,8 +106,12 @@ app.get('/download', async (req, res) => {
             }
         }
 
-        // 3. Configure Download Engine
-        let dlOptions = { ...getBaseOptions(), output: tempFilePath, ffmpegLocation: ffmpegPath, noPlaylist: true };
+        // 3. Configure Download Engine (Removed ffmpegLocation so it auto-detects!)
+        let dlOptions = { 
+            ...getBaseOptions(), 
+            output: ytDlpOutputPath, 
+            noPlaylist: true 
+        };
         
         if (isVideo) {
             const videoQuality = format === '2160p' ? 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' :
@@ -116,7 +124,7 @@ app.get('/download', async (req, res) => {
             dlOptions.format = 'ba/b';
             dlOptions.extractAudio = true;
             dlOptions.audioFormat = format;
-            if (format === 'mp3') dlOptions.audioQuality = '320K';
+            dlOptions.audioQuality = '0'; // 0 is best quality in yt-dlp
         }
 
         // 4. Start Download Process
@@ -140,7 +148,7 @@ app.get('/download', async (req, res) => {
         });
 
         // 5. Verify File and Send Response
-        if (!fs.existsSync(tempFilePath)) {
+        if (!fs.existsSync(finalFilePath)) {
             throw new Error("Download process completed but file was not found.");
         }
 
@@ -151,14 +159,14 @@ app.get('/download', async (req, res) => {
                 artist: info.uploader || "PureWave", 
                 album: "PureWave Downloads",
                 image: imageBuffer ? { mime: "image/jpeg", type: { id: 3 }, imageBuffer: imageBuffer } : undefined
-            }, tempFilePath);
+            }, finalFilePath);
         }
 
         // Send file securely and delete afterward
-        res.download(tempFilePath, `${cleanTitle}.${fileExtension}`, (err) => {
+        res.download(finalFilePath, `${cleanTitle}.${fileExtension}`, (err) => {
             if (err) console.error("Error sending file to client:", err);
             // Always clean up the temp file
-            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); 
+            if (fs.existsSync(finalFilePath)) fs.unlinkSync(finalFilePath); 
         });
 
     } catch (error) {
@@ -171,7 +179,7 @@ app.get('/download', async (req, res) => {
             res.status(500).json({ error: 'Extraction failed.', details: error.message });
         }
     }
-}); 
+});
 
 const PORT = process.env.PORT || 5000;
 // PRO FIX: Use server.listen instead of app.listen to enable WebSocket progress!
